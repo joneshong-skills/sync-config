@@ -1,3 +1,5 @@
+[English](README.md) | [繁體中文](README.zh.md)
+
 # sync-config
 
 Synchronize Claude Code configuration to Gemini CLI and Codex CLI, ensuring a consistent tooling and knowledge environment when switching between AI coding assistants.
