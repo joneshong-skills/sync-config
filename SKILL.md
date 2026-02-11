@@ -7,6 +7,7 @@ description: >
   synchronization, MCP sharing, or multi-CLI setup.
 version: 0.1.1
 tools: Read, Edit, Bash
+argument-hint: "sync mcp|skills|instructions|agents|hooks|all [--target gemini|codex]"
 ---
 
 # Sync Config — 跨 CLI 設定同步
