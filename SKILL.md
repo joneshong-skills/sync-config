@@ -5,7 +5,7 @@ description: >
   "sync MCP to codex", "sync skills across CLIs", "synchronize settings",
   "copy CLAUDE.md to GEMINI.md", or discusses cross-CLI configuration
   synchronization, MCP sharing, or multi-CLI setup.
-version: 0.1.0
+version: 0.1.1
 tools: Read, Edit, Bash
 ---
 

@@ -235,7 +235,8 @@ class GeminiAdapter:
                         "command": h.get("command", ""),
                     }
                     if h.get("timeout"):
-                        gh["timeout"] = h["timeout"]
+                        # Claude Code: seconds, Gemini CLI: milliseconds
+                        gh["timeout"] = h["timeout"] * 1000
                     converted_hooks.append(gh)
 
                 if converted_hooks:
