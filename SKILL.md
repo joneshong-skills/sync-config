@@ -1,13 +1,17 @@
 ---
 name: sync-config
-description: >
-  This skill should be used when the user asks to "sync config to gemini",
-  "sync MCP to codex", "sync skills across CLIs", "synchronize settings",
-  "copy CLAUDE.md to GEMINI.md", or discusses cross-CLI configuration
-  synchronization, MCP sharing, or multi-CLI setup.
+description: "Sync Config"
 version: 0.1.1
 tools: Read, Edit, Bash
 argument-hint: "sync mcp|skills|instructions|agents|hooks|all [--target gemini|codex]"
+disable-model-invocation: true
+io:
+  input:
+    - mime: "text/plain"
+      description: "Config sync operation"
+  output:
+    - mime: "text/markdown"
+      description: "Sync result with changes applied"
 ---
 
 # Sync Config — 跨 CLI 設定同步
@@ -27,7 +31,7 @@ argument-hint: "sync mcp|skills|instructions|agents|hooks|all [--target gemini|c
 ## CLI 路徑
 
 ```bash
-SC="python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
+SC="~/.local/bin/python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
 ```
 
 ## 快速使用

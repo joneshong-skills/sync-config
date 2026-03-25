@@ -38,7 +38,7 @@ Requires Python 3.
 Set up the shortcut:
 
 ```bash
-SC="python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
+SC="~/.local/bin/python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
 ```
 
 ### Common Commands

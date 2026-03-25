@@ -38,7 +38,7 @@ git clone https://github.com/joneshong-skills/sync-config.git ~/.claude/skills/s
 設定快捷方式：
 
 ```bash
-SC="python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
+SC="~/.local/bin/python3 ~/.claude/skills/sync-config/scripts/sync_config.py"
 ```
 
 ### 常用命令
