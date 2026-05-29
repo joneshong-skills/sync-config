@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """sync_config.py - Sync Claude Code configuration to other CLI tools.
 
+Targets: gemini | codex | copilot | opencode | qwen | hermes | all
+
 Usage:
-    python3 sync_config.py sync mcp          [--target gemini|codex|copilot|opencode|all]
+    python3 sync_config.py sync mcp          [--target ...]
     python3 sync_config.py sync skills       [--target ...] [--include a,b] [--exclude a,b]
-    python3 sync_config.py sync commands     [--target gemini|codex|copilot|opencode|all]
+    python3 sync_config.py sync commands     [--target ...]
     python3 sync_config.py sync instructions [--target ...] [--cwd /path] [--global]
     python3 sync_config.py sync agents       [--target gemini|opencode]
     python3 sync_config.py sync hooks        [--target gemini]
-    python3 sync_config.py sync all          [--target gemini|codex|copilot|opencode|all]
+    python3 sync_config.py sync all          [--target ...]
     python3 sync_config.py status
+
+Adapter capabilities:
+    gemini:   mcp, skills (~/.agents/skills), instructions (GEMINI.md), agents, commands
+    codex:    mcp, skills (~/.agents/skills), instructions (AGENTS.md), commands
+    copilot:  mcp, instructions (.github/copilot-instructions.md)
+    opencode: mcp, skills (~/.config/opencode/skills), instructions (AGENTS.md), agents
+    qwen:     mcp, skills (~/.qwen/skills), instructions (QWEN.md), commands
+    hermes:   mcp (~/.hermes/config.yaml), skills (external_dirs only)
 """
 
 import argparse
@@ -36,6 +46,7 @@ CLAUDE_MCP_PROJECT = Path(".claude") / "mcp.json"
 # to know how to invoke the others (e.g., Gemini calling `claude -p`).
 SKIP_SKILLS_PATTERNS = [
     "sync-config",  # this skill itself
+    "_ref-*",  # internal reference materials; name starting with "_" violates Copilot/Gemini slug rules
 ]
 
 # ---------------------------------------------------------------------------
@@ -167,11 +178,20 @@ def read_claude_commands():
 
 
 def read_claude_agents():
-    """List agent .md files under ~/.claude/agents/."""
+    """List agent .md files under ~/.claude/agents/.
+
+    Skips files without YAML frontmatter (e.g. AGENT-SKILL-MAP.md, README.md).
+    """
     agents = []
     for agents_dir in [CLAUDE_AGENTS_DIR, Path(".claude") / "agents"]:
         if agents_dir.is_dir():
             for f in sorted(agents_dir.glob("*.md")):
+                try:
+                    head = f.read_text(encoding="utf-8", errors="ignore").lstrip()
+                except OSError:
+                    continue
+                if not head.startswith("---"):
+                    continue
                 agents.append(f)
     return agents
 
@@ -290,6 +310,14 @@ def get_adapters(target):
         from sync_opencode import OpenCodeAdapter
 
         adapters.append(("opencode", OpenCodeAdapter()))
+    if target in ("qwen", "all"):
+        from sync_qwen import QwenAdapter
+
+        adapters.append(("qwen", QwenAdapter()))
+    if target in ("hermes", "all"):
+        from sync_hermes import HermesAdapter
+
+        adapters.append(("hermes", HermesAdapter()))
     return adapters
 
 
@@ -384,7 +412,9 @@ def _sync_project_instructions(args):
 
     target_dir = Path(args.cwd) if args.cwd else Path.cwd()
     project_rules = read_project_rules(args.cwd)
-    knowledge = read_project_knowledge(args.cwd)
+    # Knowledge embedding is opt-in: memory/ holds ~360 topic files that, when
+    # inlined, balloon the generated instruction file ~5x. Default off.
+    knowledge = read_project_knowledge(args.cwd) if getattr(args, "with_knowledge", False) else []
     extra = project_rules + knowledge
 
     print(f"📄 來源: {source}")
@@ -396,6 +426,9 @@ def _sync_project_instructions(args):
         print(f"📚 專案知識: {len(knowledge)} 個 ({', '.join(k.stem for k in knowledge)})")
 
     for name, adapter in get_adapters(args.target):
+        if not hasattr(adapter, "sync_instructions"):
+            print(f"  ⏭️  {name} 不支援專案指令同步")
+            continue
         print(f"\n🔄 同步專案指令 + Rules + 知識 → {name.capitalize()}")
         adapter.sync_instructions(source, target_dir, extra_files=extra)
 
@@ -669,7 +702,7 @@ def main():
         p.add_argument(
             "--target",
             default="all",
-            choices=["gemini", "codex", "copilot", "opencode", "all"],
+            choices=["gemini", "codex", "copilot", "opencode", "qwen", "hermes", "all"],
             help="同步目標 (default: all)",
         )
         if name in ("skills", "all"):
@@ -677,6 +710,12 @@ def main():
             p.add_argument("--exclude", default=None, help="排除指定 skills (逗號分隔)")
         if name in ("instructions", "all"):
             p.add_argument("--cwd", default=None, help="專案目錄 (default: 當前目錄)")
+            p.add_argument(
+                "--with-knowledge",
+                dest="with_knowledge",
+                action="store_true",
+                help="嵌入 memory/ 知識檔（預設關，避免指令檔 ~5x 膨脹）",
+            )
         if name == "instructions":
             p.add_argument(
                 "--global",
