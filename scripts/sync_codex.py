@@ -286,8 +286,9 @@ class CodexAdapter:
 
             dst.mkdir(parents=True, exist_ok=True)
 
-            # SKILL.md — get full version (bypass cold stripping)
+            # SKILL.md — get full version, transform for Codex
             skill_md_content = _get_full_skill_md(src)
+            skill_md_content = self._transform_skill_md(skill_md_content)
             (dst / "SKILL.md").write_text(skill_md_content, encoding="utf-8")
 
             # Remaining items — symlink
@@ -386,9 +387,31 @@ class CodexAdapter:
         content = content.replace("claude mcp add", "codex mcp add")
         content = content.replace("claude mcp get", "codex mcp get")
 
-        # Note: Codex tool names differ significantly from Claude Code
-        # and are not user-configurable in skill frontmatter, so we skip
-        # tool name mapping. Hook events are also not mapped (Codex only
-        # supports `notify` with `agent-turn-complete`).
+        return content
+
+    def _transform_skill_md(self, content: str) -> str:
+        """Transform SKILL.md for Codex: translate tool names + paths."""
+        import re as _re
+
+        try:
+            import sys as _sys
+
+            _sys.path.insert(0, str(HOME / "workshop" / "libs" / "cli-dic"))
+            from cli_dic import get
+
+            codex_entry = get("codex")
+        except (ImportError, KeyError):
+            return content  # cli-dic not available, skip translation
+
+        # Translate tools: line in YAML frontmatter
+        def _replace_tools(m):
+            original = m.group(1)
+            translated = codex_entry.tool_names.translate_list(original)
+            return f"tools: {translated}"
+
+        content = _re.sub(r"^tools:\s*(.+)$", _replace_tools, content, count=1, flags=_re.MULTILINE)
+
+        # Apply path mappings
+        content = self._transform_for_codex(content)
 
         return content

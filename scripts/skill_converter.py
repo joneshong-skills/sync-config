@@ -30,7 +30,7 @@ except ImportError:
 
 # Output directories per target CLI
 TARGET_DIRS = {
-    "gemini": Path(os.path.expanduser("~/.gemini/skills")),
+    "gemini": Path(os.path.expanduser("~/.agents/skills")),
     "codex": Path(os.path.expanduser("~/.agents/skills")),
 }
 

@@ -1,34 +1,43 @@
 #!/usr/bin/env python3
 """sync_opencode.py - OpenCode CLI adapter for sync-config.
 
-Handles: MCP servers, Instructions (OPENCODE.md), Agents (config-based).
-Does NOT support: Skills (no discovery), Hooks, Custom Commands.
+Handles: MCP servers, Skills, Instructions (AGENTS.md), Agents (config-based).
+Does NOT support: Hooks (use OpenCode plugins instead), Custom Commands.
 Config: ~/.config/opencode/opencode.json
+Skills: ~/.config/opencode/skills/<name>/SKILL.md (added in OpenCode v1.14+)
+
+Notes (verified against OpenCode v1.14.41, 2026-05):
+  - MCP env-var key is `environment` (not `env`)
+  - Instructions: AGENTS.md takes precedence over the legacy OPENCODE.md
+  - Skills are discovered from ~/.config/opencode/skills/ + project .opencode/skills/
 """
 
 import json
+import shutil
 from pathlib import Path
 
 HOME = Path.home()
 OPENCODE_CONFIG_DIR = HOME / ".config" / "opencode"
 OPENCODE_CONFIG = OPENCODE_CONFIG_DIR / "opencode.json"
+OPENCODE_SKILLS = OPENCODE_CONFIG_DIR / "skills"
 
 # Claude -> OpenCode path mapping (longer/more specific first)
 OPENCODE_PATH_MAP = [
-    ("~/.claude/skills/", "(no skill system)"),
-    ("~/.claude/CLAUDE.md", "OPENCODE.md"),
+    ("~/.claude/skills/", "~/.config/opencode/skills/"),
+    ("~/.claude/CLAUDE.md", "~/.config/opencode/AGENTS.md"),
     ("~/.claude/mcp.json", "~/.config/opencode/opencode.json"),
     ("~/.claude/settings.json", "~/.config/opencode/opencode.json"),
     ("~/.claude/data/", "~/.local/share/opencode/"),
     ("~/.claude/agents/", "~/.config/opencode/ (agent key)"),
     ("~/.claude/", "~/.config/opencode/"),
-    (".claude/CLAUDE.md", "OPENCODE.md"),
+    (".claude/CLAUDE.md", "AGENTS.md"),
+    (".claude/skills/", ".opencode/skills/"),
     (".claude/", ".opencode/"),
     (".claudeignore", ".opencodeignore"),
 ]
 
 OPENCODE_FILENAME_MAP = {
-    "CLAUDE.md": "OPENCODE.md",
+    "CLAUDE.md": "AGENTS.md",
 }
 
 
@@ -88,32 +97,68 @@ class OpenCodeAdapter:
     # Skills
     # ------------------------------------------------------------------
     def sync_skills(self, source_dir: Path, skill_names: list):
-        """OpenCode has no native skill discovery system."""
-        print("  \u23ed\ufe0f  OpenCode \u4e0d\u652f\u63f4 Skill \u767c\u73fe\u7cfb\u7d71")
+        """Sync skills to ~/.config/opencode/skills/<name>/SKILL.md.
+
+        OpenCode v1.14+ discovers skills from this dir plus project-level
+        .opencode/skills/. We only write the global location.
+        """
+        OPENCODE_SKILLS.mkdir(parents=True, exist_ok=True)
+        synced = 0
+
+        for name in skill_names:
+            src = source_dir / name
+            dst = OPENCODE_SKILLS / name
+
+            if dst.is_symlink() or dst.exists():
+                if dst.is_symlink() or not dst.is_dir():
+                    dst.unlink()
+                else:
+                    shutil.rmtree(dst)
+
+            shutil.copytree(src, dst)
+            synced += 1
+
+        print(
+            f"  \U0001f4c1 \u5171\u540c\u6b65 {synced} \u500b skills \u2192 ~/.config/opencode/skills/"
+        )
 
     # ------------------------------------------------------------------
     # Instructions
     # ------------------------------------------------------------------
     def sync_instructions(self, source: Path, target_dir: Path, extra_files=None):
-        """Write OPENCODE.md in project directory."""
-        target = target_dir / "OPENCODE.md"
+        """Write project-level AGENTS.md (OpenCode v1.14+ format).
+
+        Legacy OPENCODE.md is removed if present to avoid stale duplicates.
+        """
+        target = target_dir / "AGENTS.md"
         self._write_opencode_md(source, target, extra_files=extra_files)
+
+        legacy = target_dir / "OPENCODE.md"
+        if legacy.exists():
+            legacy.unlink()
+            print("  [legacy] \u5df2\u79fb\u9664\u820a\u7248 OPENCODE.md")
 
     def sync_global_instructions(self, source: Path, extra_files=None):
-        """Write global instructions file and register in opencode.json."""
+        """Write global ~/.config/opencode/AGENTS.md (preferred over instructions.md)."""
         OPENCODE_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        target = OPENCODE_CONFIG_DIR / "instructions.md"
+        target = OPENCODE_CONFIG_DIR / "AGENTS.md"
         self._write_opencode_md(source, target, extra_files=extra_files)
 
-        # Also register in config's instructions array
+        # Clean up legacy global instructions file + its registration
+        legacy = OPENCODE_CONFIG_DIR / "instructions.md"
         config = self._read_config()
-        instructions = config.get("instructions", [])
-        target_str = str(target)
-        if target_str not in instructions:
-            instructions.append(target_str)
-            config["instructions"] = instructions
-            self._write_config(config)
-            print("  \U0001f4dd \u5df2\u8a3b\u518a\u5230 opencode.json instructions \u9663\u5217")
+        instructions = config.get("instructions", []) or []
+        legacy_str = str(legacy)
+        if legacy.exists() or legacy_str in instructions:
+            if legacy.exists():
+                legacy.unlink()
+            if legacy_str in instructions:
+                instructions.remove(legacy_str)
+                config["instructions"] = instructions
+                self._write_config(config)
+            print(
+                "  [legacy] \u5df2\u6e05\u9664\u820a\u7248 instructions.md \u8207\u8a3b\u518a"
+            )
 
     def _write_opencode_md(self, source: Path, target: Path, extra_files=None):
         """Transform CLAUDE.md content for OpenCode and write."""
@@ -150,7 +195,9 @@ class OpenCodeAdapter:
         # 3. CLI command references
         content = content.replace("`claude mcp ", "`opencode mcp ")
         content = content.replace("claude mcp list", "opencode (MCP via opencode.json)")
-        content = content.replace("claude mcp add", "(edit ~/.config/opencode/opencode.json)")
+        content = content.replace(
+            "claude mcp add", "(edit ~/.config/opencode/opencode.json)"
+        )
 
         return content
 

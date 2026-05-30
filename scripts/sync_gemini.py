@@ -12,7 +12,8 @@ from pathlib import Path
 
 HOME = Path.home()
 GEMINI_SETTINGS = HOME / ".gemini" / "settings.json"
-GEMINI_SKILLS = HOME / ".gemini" / "skills"
+GEMINI_SKILLS = HOME / ".gemini" / "skills"  # legacy, kept for reference
+AGENTS_SKILLS = HOME / ".agents" / "skills"  # unified target (Gemini auto-discovers)
 GEMINI_AGENTS = HOME / ".gemini" / "agents"
 
 # Claude → Gemini hook event name mapping
@@ -29,28 +30,31 @@ HOOK_EVENT_MAP = {
     # "SubagentStart", "SubagentStop", "PermissionRequest"
 }
 
-# Claude → Gemini tool name mapping (common ones)
+# Claude → Gemini tool name mapping (verified against Gemini CLI 0.41 builtin names)
 TOOL_NAME_MAP = {
     "Read": "read_file",
     "Write": "write_file",
-    "Edit": "edit_file",
+    "Edit": "replace",
     "Bash": "run_shell_command",
-    "Glob": "glob_search",
+    "Glob": "glob",
     "Grep": "grep_search",
+    "LS": "list_directory",
     "WebFetch": "web_fetch",
-    "WebSearch": "web_search",
+    "WebSearch": "google_web_search",
+    "TodoWrite": "write_todos",
+    "Task": "invoke_agent",
 }
 
 
 # Claude → Gemini path mapping (order: longer/more specific first)
 GEMINI_PATH_MAP = [
-    ("~/.claude/skills/", "~/.gemini/skills/"),
+    ("~/.claude/skills/", "~/.agents/skills/"),
     ("~/.claude/agents/", "~/.gemini/agents/"),
     ("~/.claude/CLAUDE.md", "~/.gemini/GEMINI.md"),
     ("~/.claude/mcp.json", "~/.gemini/settings.json"),
     ("~/.claude/settings.json", "~/.gemini/settings.json"),
     ("~/.claude/data/", "~/.gemini/data/"),
-    (".claude/skills/", ".gemini/skills/"),
+    (".claude/skills/", ".agents/skills/"),
     (".claude/agents/", ".gemini/agents/"),
     (".claudeignore", ".geminiignore"),
 ]
@@ -64,7 +68,7 @@ GEMINI_FILENAME_MAP = {
 class GeminiAdapter:
     """Sync adapter for Gemini CLI."""
 
-    skills_dir = str(GEMINI_SKILLS)
+    skills_dir = str(AGENTS_SKILLS)
 
     # ------------------------------------------------------------------
     # MCP
@@ -113,7 +117,9 @@ class GeminiAdapter:
                 if not url:
                     return False
                 # Remove existing first (ignore errors)
-                subprocess.run(["gemini", "mcp", "remove", name], capture_output=True, timeout=10)
+                subprocess.run(
+                    ["gemini", "mcp", "remove", name], capture_output=True, timeout=10
+                )
                 result = subprocess.run(
                     ["gemini", "mcp", "add", name, url, "-t", "http"],
                     capture_output=True,
@@ -130,7 +136,9 @@ class GeminiAdapter:
                 url = info.get("url", "")
                 if not url:
                     return False
-                subprocess.run(["gemini", "mcp", "remove", name], capture_output=True, timeout=10)
+                subprocess.run(
+                    ["gemini", "mcp", "remove", name], capture_output=True, timeout=10
+                )
                 result = subprocess.run(
                     ["gemini", "mcp", "add", name, url, "-t", "sse"],
                     capture_output=True,
@@ -147,7 +155,9 @@ class GeminiAdapter:
                 args = info.get("args", [])
                 if not command:
                     return False
-                subprocess.run(["gemini", "mcp", "remove", name], capture_output=True, timeout=10)
+                subprocess.run(
+                    ["gemini", "mcp", "remove", name], capture_output=True, timeout=10
+                )
                 cmd = ["gemini", "mcp", "add", name, command] + args + ["-t", "stdio"]
                 env_vars = info.get("env", {})
                 for k, v in env_vars.items():
@@ -193,40 +203,37 @@ class GeminiAdapter:
     # Skills
     # ------------------------------------------------------------------
     def sync_skills(self, source_dir: Path, skill_names: list):
-        """Copy skill directories to ~/.gemini/skills/.
+        """Sync skills to ~/.agents/skills/ (unified target).
 
-        Gemini CLI 0.28+ also reads ~/.agents/skills/ as an alias
-        (priority 3.1, higher than ~/.gemini/skills/ priority 3).
-        To avoid 'Skill conflict detected' warnings, skip skills
-        that already exist in ~/.agents/skills/ (synced by Codex adapter).
-        Gemini-exclusive skills still land in ~/.gemini/skills/.
+        Gemini CLI hardcodes discovery from both ~/.gemini/skills/ and
+        ~/.agents/skills/. To avoid 'Skill conflict detected' warnings,
+        we write ONLY to ~/.agents/skills/ and keep ~/.gemini/skills/ empty.
         """
-        GEMINI_SKILLS.mkdir(parents=True, exist_ok=True)
-        agents_skills_dir = HOME / ".agents" / "skills"
+        AGENTS_SKILLS.mkdir(parents=True, exist_ok=True)
         synced = 0
-        skipped = 0
 
         for name in skill_names:
             src = source_dir / name
-            dst = GEMINI_SKILLS / name
-
-            # Skip if Codex already has this skill (Gemini reads both)
-            if (agents_skills_dir / name / "SKILL.md").exists():
-                skipped += 1
-                continue
+            dst = AGENTS_SKILLS / name
 
             if dst.exists():
                 shutil.rmtree(dst)
 
             shutil.copytree(src, dst)
-            print(f"  ✅ {name} → {dst}")
+
+            # Transform SKILL.md: translate tool names for Gemini
+            skill_md = dst / "SKILL.md"
+            if skill_md.exists():
+                content = skill_md.read_text(encoding="utf-8")
+                content = self._transform_skill_md(content)
+                skill_md.write_text(content, encoding="utf-8")
+
             synced += 1
 
-        if skipped:
-            print(
-                f"  ⏭️  {skipped} 個 skills 已透過 ~/.agents/skills/ symlink 共享（Gemini 自動讀取）"
-            )
-        print(f"  📁 共同步 {synced} 個 Gemini 專屬 skills")
+        print(f"  📁 共同步 {synced} 個 skills → ~/.agents/skills/")
+        print(
+            "  ℹ️  Gemini CLI 從 ~/.agents/skills/ 自動探索（~/.gemini/skills/ 已清空）"
+        )
 
     # ------------------------------------------------------------------
     # Instructions
@@ -298,6 +305,35 @@ class GeminiAdapter:
 
         return content
 
+    def _transform_skill_md(self, content: str) -> str:
+        """Transform SKILL.md for Gemini: translate tool names + paths."""
+        import re as _re
+
+        try:
+            import sys as _sys
+
+            _sys.path.insert(0, str(HOME / "workshop" / "libs" / "cli-dic"))
+            from cli_dic import get
+
+            gemini_entry = get("gemini")
+        except (ImportError, KeyError):
+            return content  # cli-dic not available, skip translation
+
+        # Translate tools: line in YAML frontmatter
+        def _replace_tools(m):
+            original = m.group(1)
+            translated = gemini_entry.tool_names.translate_list(original)
+            return f"tools: {translated}"
+
+        content = _re.sub(
+            r"^tools:\s*(.+)$", _replace_tools, content, count=1, flags=_re.MULTILINE
+        )
+
+        # Apply path and content mappings
+        content = self._transform_for_gemini(content)
+
+        return content
+
     # ------------------------------------------------------------------
     # Commands
     # ------------------------------------------------------------------
@@ -333,79 +369,108 @@ class GeminiAdapter:
             dst.write_text(converted, encoding="utf-8")
             print(f"  ✅ {src.name} → {dst}")
 
+    # Frontmatter keys Gemini's agent schema rejects (Claude-only metadata)
+    _GEMINI_AGENT_DROP_KEYS = frozenset(
+        {
+            "color",
+            "maxTurns",
+            "max_turns",
+            "memory",
+            "skills",
+            "disallowed-tools",
+            "permission-mode",
+            "argument-hint",
+        }
+    )
+
     def _convert_agent_frontmatter(self, content):
-        """Convert Claude agent frontmatter to Gemini format."""
-        # Translate tool names in allowed-tools
-        for claude_name, gemini_name in TOOL_NAME_MAP.items():
-            content = content.replace(f"  - {claude_name}", f"  - {gemini_name}")
+        """Convert Claude agent frontmatter to Gemini-compatible YAML.
 
-        # Rename frontmatter fields
-        content = content.replace("allowed-tools:", "tools:")
-        content = content.replace(
-            "permission-mode: plan", "# permission-mode: plan (not supported)"
-        )
-        content = content.replace(
-            "disallowed-tools:", "# disallowed-tools (use excludeTools in extension):"
-        )
+        - tools: accept "A, B, C" string or YAML list, emit YAML flow array
+          with Claude→Gemini tool name mapping.
+        - Drop Claude-only fields the Gemini schema rejects.
+        - Always emit `kind: local`.
+        """
+        import re
 
-        # Add kind field if missing
-        if "kind:" not in content:
-            content = content.replace("---\n\n", "kind: local\n---\n\n", 1)
+        import yaml
 
-        return content
+        m = re.match(r"^---\s*\n(.*?)\n---\s*\n?(.*)$", content, re.DOTALL)
+        if not m:
+            return content
+        fm_text, body = m.group(1), m.group(2)
+
+        try:
+            fm = yaml.safe_load(fm_text) or {}
+            if not isinstance(fm, dict):
+                return content
+        except yaml.YAMLError:
+            return content
+
+        # Normalize tools → list, then map names
+        tools_raw = fm.pop("tools", None)
+        if tools_raw is None:
+            tools_raw = fm.pop("allowed-tools", None)
+        else:
+            fm.pop("allowed-tools", None)
+
+        tools_list = []
+        if isinstance(tools_raw, str):
+            tools_list = [t.strip() for t in tools_raw.split(",") if t.strip()]
+        elif isinstance(tools_raw, list):
+            tools_list = [str(t).strip() for t in tools_raw if str(t).strip()]
+        mapped_tools = [TOOL_NAME_MAP.get(t, t) for t in tools_list]
+
+        # Drop Claude-only keys
+        for k in list(fm.keys()):
+            if k in self._GEMINI_AGENT_DROP_KEYS:
+                fm.pop(k, None)
+
+        # Re-emit in a stable, schema-friendly order
+        ordered = {}
+        for key in ("name", "description"):
+            if key in fm:
+                ordered[key] = fm.pop(key)
+        if mapped_tools:
+            ordered["tools"] = mapped_tools
+        for key in ("model",):
+            if key in fm:
+                ordered[key] = fm.pop(key)
+        ordered["kind"] = "local"
+        for key, val in fm.items():
+            ordered[key] = val
+
+        new_fm = yaml.safe_dump(
+            ordered,
+            sort_keys=False,
+            allow_unicode=True,
+            default_flow_style=None,
+        ).rstrip("\n")
+
+        return f"---\n{new_fm}\n---\n\n{body.lstrip(chr(10))}"
 
     # ------------------------------------------------------------------
-    # Hooks
+    # Hooks — DISABLED (2026-04-14)
     # ------------------------------------------------------------------
+    # 不再同步任何 Claude Code hooks 到 Gemini CLI。
+    #
+    # 原因：Claude Code 的 BeforeAgent/UserPromptSubmit hook 會呼叫
+    # ~/.claude/hooks/dispatcher.py，內部執行 memvault cascade recall。
+    # 當 memvault extract.py spawn gemini CLI 時，CLI 啟動的 hook 會
+    # 反向呼叫 memvault，形成循環依賴 → 進程卡死 5 分鐘後 timeout。
+    #
+    # 此方法現在也主動清除舊有 hooks 區塊，避免殘留設定繼續觸發循環。
     def sync_hooks(self, claude_hooks: dict):
-        """Convert Claude hooks to Gemini format and merge into settings."""
+        """No-op: hooks are no longer synced to Gemini (prevents memvault → gemini → memvault loop)."""
         settings = self._read_settings()
-        gemini_hooks = settings.setdefault("hooks", {})
-
-        converted_count = 0
-        skipped_events = []
-
-        for event, hook_list in claude_hooks.items():
-            gemini_event = HOOK_EVENT_MAP.get(event)
-            if not gemini_event:
-                skipped_events.append(event)
-                continue
-
-            # Claude format: [{"hooks": [{"type":"command","command":"..."}]}]
-            # Gemini format: [{"matcher":"*","hooks":[{"name":"...","type":"command","command":"..."}]}]
-            converted_entries = []
-            for entry in hook_list:
-                hooks = entry.get("hooks", [])
-                converted_hooks = []
-                for h in hooks:
-                    gh = {
-                        "name": f"synced-{event.lower()}",
-                        "type": h.get("type", "command"),
-                        "command": h.get("command", ""),
-                    }
-                    if h.get("timeout"):
-                        # Claude Code: seconds, Gemini CLI: milliseconds
-                        gh["timeout"] = h["timeout"] * 1000
-                    converted_hooks.append(gh)
-
-                if converted_hooks:
-                    converted_entries.append(
-                        {
-                            "matcher": entry.get("matcher", "*"),
-                            "hooks": converted_hooks,
-                        }
-                    )
-
-            if converted_entries:
-                gemini_hooks[gemini_event] = converted_entries
-                converted_count += 1
-                print(f"  ✅ {event} → {gemini_event}")
-
-        if skipped_events:
-            print(f"  ⏭️  跳過 (Gemini 不支援): {', '.join(skipped_events)}")
-
-        self._write_settings(settings)
-        print(f"  📝 共轉換 {converted_count} 個 hook 事件")
+        removed = False
+        if "hooks" in settings:
+            del settings["hooks"]
+            removed = True
+            self._write_settings(settings)
+        if removed:
+            print("  🗑️  已清除 ~/.gemini/settings.json 中殘留的 hooks 區塊")
+        print("  ⏭️  Gemini hooks 同步已停用（循環依賴風險）")
 
     # ------------------------------------------------------------------
     # Settings I/O
