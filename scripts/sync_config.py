@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """sync_config.py - Sync Claude Code configuration to other CLI tools.
 
-Targets: gemini | codex | copilot | opencode | qwen | hermes | all
+Targets: antigravity | codex | copilot | opencode | qwen | hermes | all
 
 Usage:
     python3 sync_config.py sync mcp          [--target ...]
     python3 sync_config.py sync skills       [--target ...] [--include a,b] [--exclude a,b]
     python3 sync_config.py sync commands     [--target ...]
     python3 sync_config.py sync instructions [--target ...] [--cwd /path] [--global]
-    python3 sync_config.py sync agents       [--target gemini|opencode]
-    python3 sync_config.py sync hooks        [--target gemini]
+    python3 sync_config.py sync agents       [--target antigravity|opencode]
+    python3 sync_config.py sync hooks        [--target antigravity]
     python3 sync_config.py sync all          [--target ...]
     python3 sync_config.py status
 
 Adapter capabilities:
-    gemini:   mcp, skills (~/.agents/skills), instructions (GEMINI.md), agents, commands
+    antigravity: mcp, skills (~/.agents/skills), instructions (GEMINI.md), agents, commands
     codex:    mcp, skills (~/.agents/skills), instructions (AGENTS.md), commands
     copilot:  mcp, instructions (.github/copilot-instructions.md)
     opencode: mcp, skills (~/.config/opencode/skills), instructions (AGENTS.md), agents
@@ -41,12 +41,12 @@ CLAUDE_MCP_GLOBAL = HOME / ".claude.json"  # ← top-level config (actual locati
 CLAUDE_MCP_PROJECT = Path(".claude") / "mcp.json"
 
 # Skip list: only self-referential skill
-# Headless skills (claude-code-headless, gemini-cli-headless, codex-cli-headless)
+# Headless skills (claude-code-headless, antigravity-cli-headless, codex-cli-headless)
 # are intentionally synced to ALL CLIs — cross-CLI dispatch requires each CLI
-# to know how to invoke the others (e.g., Gemini calling `claude -p`).
+# to know how to invoke the others (e.g., Antigravity calling `claude -p`).
 SKIP_SKILLS_PATTERNS = [
     "sync-config",  # this skill itself
-    "_ref-*",  # internal reference materials; name starting with "_" violates Copilot/Gemini slug rules
+    "_ref-*",  # internal reference materials; name starting with "_" violates Copilot/Antigravity slug rules
 ]
 
 # ---------------------------------------------------------------------------
@@ -115,7 +115,9 @@ def _get_server_detail(name):
                 # URL may contain ":" so rejoin
                 if "://" not in info["url"]:
                     info["url"] = (
-                        line.split(None, 1)[1].strip() if len(line.split(None, 1)) > 1 else ""
+                        line.split(None, 1)[1].strip()
+                        if len(line.split(None, 1)) > 1
+                        else ""
                     )
             elif line.startswith("Command:"):
                 cmd_str = line.split(":", 1)[1].strip()
@@ -298,10 +300,10 @@ def get_adapters(target):
         from sync_codex import CodexAdapter
 
         adapters.append(("codex", CodexAdapter()))
-    if target in ("gemini", "all"):
-        from sync_gemini import GeminiAdapter
+    if target in ("antigravity", "all"):
+        from sync_antigravity import AntigravityAdapter
 
-        adapters.append(("gemini", GeminiAdapter()))
+        adapters.append(("antigravity", AntigravityAdapter()))
     if target in ("copilot", "all"):
         from sync_copilot import CopilotAdapter
 
@@ -379,7 +381,9 @@ def cmd_sync_skills(args):
         if not filtered:
             print(f"⚠️  沒有適合同步到 {name} 的 skills")
             continue
-        print(f"\n🔄 同步 {len(filtered)} 個 Skills → {name.capitalize()}: {', '.join(filtered)}")
+        print(
+            f"\n🔄 同步 {len(filtered)} 個 Skills → {name.capitalize()}: {', '.join(filtered)}"
+        )
         adapter.sync_skills(CLAUDE_SKILLS_DIR, filtered)
         # Prune orphans from all target directories for this adapter
         for td in target_dirs.get(name, []):
@@ -414,7 +418,11 @@ def _sync_project_instructions(args):
     project_rules = read_project_rules(args.cwd)
     # Knowledge embedding is opt-in: memory/ holds ~360 topic files that, when
     # inlined, balloon the generated instruction file ~5x. Default off.
-    knowledge = read_project_knowledge(args.cwd) if getattr(args, "with_knowledge", False) else []
+    knowledge = (
+        read_project_knowledge(args.cwd)
+        if getattr(args, "with_knowledge", False)
+        else []
+    )
     extra = project_rules + knowledge
 
     print(f"📄 來源: {source}")
@@ -423,7 +431,9 @@ def _sync_project_instructions(args):
             f"📜 專案 Rules: {len(project_rules)} 個 ({', '.join(r.stem for r in project_rules)})"
         )
     if knowledge:
-        print(f"📚 專案知識: {len(knowledge)} 個 ({', '.join(k.stem for k in knowledge)})")
+        print(
+            f"📚 專案知識: {len(knowledge)} 個 ({', '.join(k.stem for k in knowledge)})"
+        )
 
     for name, adapter in get_adapters(args.target):
         if not hasattr(adapter, "sync_instructions"):
@@ -665,13 +675,17 @@ def cmd_status(_args):
     # Hooks
     print("\n── Hooks ──")
     hooks = read_claude_hooks()
-    print(f"  Claude Code: {len(hooks)} 個事件 ({', '.join(hooks.keys()) if hooks else '無'})")
+    print(
+        f"  Claude Code: {len(hooks)} 個事件 ({', '.join(hooks.keys()) if hooks else '無'})"
+    )
     gemini_settings = HOME / ".gemini" / "settings.json"
     if gemini_settings.exists():
         try:
             gs = json.loads(gemini_settings.read_text(encoding="utf-8"))
             gh = gs.get("hooks", {})
-            print(f"  Gemini CLI: {len(gh)} 個事件 ({', '.join(gh.keys()) if gh else '無'})")
+            print(
+                f"  Gemini CLI: {len(gh)} 個事件 ({', '.join(gh.keys()) if gh else '無'})"
+            )
         except (json.JSONDecodeError, OSError):
             print("  Gemini CLI: ❓ 無法讀取")
     else:
@@ -702,11 +716,21 @@ def main():
         p.add_argument(
             "--target",
             default="all",
-            choices=["gemini", "codex", "copilot", "opencode", "qwen", "hermes", "all"],
+            choices=[
+                "antigravity",
+                "codex",
+                "copilot",
+                "opencode",
+                "qwen",
+                "hermes",
+                "all",
+            ],
             help="同步目標 (default: all)",
         )
         if name in ("skills", "all"):
-            p.add_argument("--include", default=None, help="只同步指定 skills (逗號分隔)")
+            p.add_argument(
+                "--include", default=None, help="只同步指定 skills (逗號分隔)"
+            )
             p.add_argument("--exclude", default=None, help="排除指定 skills (逗號分隔)")
         if name in ("instructions", "all"):
             p.add_argument("--cwd", default=None, help="專案目錄 (default: 當前目錄)")

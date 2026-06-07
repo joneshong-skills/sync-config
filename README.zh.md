@@ -83,7 +83,7 @@ sync-config/
 ├── README.zh.md                    # 繁體中文說明（本檔案）
 ├── scripts/
 │   ├── sync_config.py              # 主要入口點
-│   ├── sync_gemini.py              # Gemini CLI 同步邏輯
+│   ├── sync_antigravity.py              # Antigravity CLI 同步邏輯
 │   └── sync_codex.py               # Codex CLI 同步邏輯
 ├── references/
 │   └── format-mapping.md           # 設定格式對應參考

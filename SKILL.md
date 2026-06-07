@@ -1,9 +1,9 @@
 ---
 name: sync-config
-description: "Sync Config"
+description: "sync, config, gemini, md, mcp, codex, skills"
 version: 0.1.1
 tools: Read, Edit, Bash
-argument-hint: "sync mcp|skills|instructions|agents|hooks|all [--target gemini|codex]"
+argument-hint: "sync mcp|skills|instructions|agents|hooks|all [--target antigravity|codex]"
 disable-model-invocation: true
 io:
   input:
@@ -16,12 +16,12 @@ io:
 
 # Sync Config — 跨 CLI 設定同步
 
-將 Claude Code 的設定同步到 Gemini CLI 和 Codex CLI，確保切換 CLI 時擁有一致的工具和知識。
+將 Claude Code 的設定同步到 Antigravity CLI 和 Codex CLI，確保切換 CLI 時擁有一致的工具和知識。
 
 ## 支援的同步項目
 
-| 項目 | → Gemini CLI | → Codex CLI |
-|------|:-----------:|:----------:|
+| 項目 | → Antigravity CLI | → Codex CLI |
+|------|:-----------------:|:-----------:|
 | MCP Servers | ✅ | ✅ |
 | Skills (SKILL.md) | ✅ | ✅ |
 | 專案指令 (CLAUDE.md) | ✅ → GEMINI.md | ✅ → AGENTS.md |
@@ -48,8 +48,8 @@ $SC status
 # 同步到所有 CLI
 $SC sync mcp
 
-# 只同步到 Gemini
-$SC sync mcp --target gemini
+# 只同步到 Antigravity
+$SC sync mcp --target antigravity
 
 # 只同步到 Codex
 $SC sync mcp --target codex
@@ -85,10 +85,10 @@ $SC sync instructions --cwd /path/to/project
 
 將 `CLAUDE.md` 複製為 `GEMINI.md` 和 `AGENTS.md`，自動加入同步標記。
 
-### 同步 Custom Agents（僅 Gemini）
+### 同步 Custom Agents（僅 Antigravity）
 
 ```bash
-$SC sync agents --target gemini
+$SC sync agents --target antigravity
 ```
 
 自動轉換：

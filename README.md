@@ -82,7 +82,7 @@ sync-config/
 ├── README.md                       # This file
 ├── scripts/
 │   ├── sync_config.py              # Main entry point
-│   ├── sync_gemini.py              # Gemini CLI sync logic
+│   ├── sync_antigravity.py              # Antigravity CLI sync logic
 │   └── sync_codex.py               # Codex CLI sync logic
 ├── references/
 │   └── format-mapping.md           # Config format mapping reference
