@@ -115,9 +115,7 @@ def _get_server_detail(name):
                 # URL may contain ":" so rejoin
                 if "://" not in info["url"]:
                     info["url"] = (
-                        line.split(None, 1)[1].strip()
-                        if len(line.split(None, 1)) > 1
-                        else ""
+                        line.split(None, 1)[1].strip() if len(line.split(None, 1)) > 1 else ""
                     )
             elif line.startswith("Command:"):
                 cmd_str = line.split(":", 1)[1].strip()
@@ -381,9 +379,7 @@ def cmd_sync_skills(args):
         if not filtered:
             print(f"⚠️  沒有適合同步到 {name} 的 skills")
             continue
-        print(
-            f"\n🔄 同步 {len(filtered)} 個 Skills → {name.capitalize()}: {', '.join(filtered)}"
-        )
+        print(f"\n🔄 同步 {len(filtered)} 個 Skills → {name.capitalize()}: {', '.join(filtered)}")
         adapter.sync_skills(CLAUDE_SKILLS_DIR, filtered)
         # Prune orphans from all target directories for this adapter
         for td in target_dirs.get(name, []):
@@ -418,11 +414,7 @@ def _sync_project_instructions(args):
     project_rules = read_project_rules(args.cwd)
     # Knowledge embedding is opt-in: memory/ holds ~360 topic files that, when
     # inlined, balloon the generated instruction file ~5x. Default off.
-    knowledge = (
-        read_project_knowledge(args.cwd)
-        if getattr(args, "with_knowledge", False)
-        else []
-    )
+    knowledge = read_project_knowledge(args.cwd) if getattr(args, "with_knowledge", False) else []
     extra = project_rules + knowledge
 
     print(f"📄 來源: {source}")
@@ -431,9 +423,7 @@ def _sync_project_instructions(args):
             f"📜 專案 Rules: {len(project_rules)} 個 ({', '.join(r.stem for r in project_rules)})"
         )
     if knowledge:
-        print(
-            f"📚 專案知識: {len(knowledge)} 個 ({', '.join(k.stem for k in knowledge)})"
-        )
+        print(f"📚 專案知識: {len(knowledge)} 個 ({', '.join(k.stem for k in knowledge)})")
 
     for name, adapter in get_adapters(args.target):
         if not hasattr(adapter, "sync_instructions"):
@@ -675,17 +665,13 @@ def cmd_status(_args):
     # Hooks
     print("\n── Hooks ──")
     hooks = read_claude_hooks()
-    print(
-        f"  Claude Code: {len(hooks)} 個事件 ({', '.join(hooks.keys()) if hooks else '無'})"
-    )
+    print(f"  Claude Code: {len(hooks)} 個事件 ({', '.join(hooks.keys()) if hooks else '無'})")
     gemini_settings = HOME / ".gemini" / "settings.json"
     if gemini_settings.exists():
         try:
             gs = json.loads(gemini_settings.read_text(encoding="utf-8"))
             gh = gs.get("hooks", {})
-            print(
-                f"  Gemini CLI: {len(gh)} 個事件 ({', '.join(gh.keys()) if gh else '無'})"
-            )
+            print(f"  Gemini CLI: {len(gh)} 個事件 ({', '.join(gh.keys()) if gh else '無'})")
         except (json.JSONDecodeError, OSError):
             print("  Gemini CLI: ❓ 無法讀取")
     else:
@@ -693,6 +679,18 @@ def cmd_status(_args):
     print("  Codex CLI: ⏭️ 不支援 hooks")
     print("  Copilot CLI: ⏭️ 不支援 hooks")
     print("  OpenCode: ⏭️ 不支援 hooks")
+
+
+def cmd_check(_args):
+    """Verify ~/.claude/skills vs ~/.agents/skills dual-copy parity.
+
+    Thin wrapper over check_skill_parity.main() so the drift canary shares one
+    implementation with the standalone script. Exits with its return code.
+    """
+    sys.path.insert(0, str(Path(__file__).parent))
+    from check_skill_parity import main as parity_main
+
+    sys.exit(parity_main())
 
 
 # ---------------------------------------------------------------------------
@@ -728,9 +726,7 @@ def main():
             help="同步目標 (default: all)",
         )
         if name in ("skills", "all"):
-            p.add_argument(
-                "--include", default=None, help="只同步指定 skills (逗號分隔)"
-            )
+            p.add_argument("--include", default=None, help="只同步指定 skills (逗號分隔)")
             p.add_argument("--exclude", default=None, help="排除指定 skills (逗號分隔)")
         if name in ("instructions", "all"):
             p.add_argument("--cwd", default=None, help="專案目錄 (default: 當前目錄)")
@@ -751,10 +747,15 @@ def main():
     # status
     sub.add_parser("status", help="顯示跨 CLI 設定狀態")
 
+    # check
+    sub.add_parser("check", help="驗證 ~/.claude 與 ~/.agents 雙份 skill 漂移")
+
     args = parser.parse_args()
 
     if args.command == "status":
         cmd_status(args)
+    elif args.command == "check":
+        cmd_check(args)
     elif args.command == "sync":
         # Ensure include/exclude/cwd/do_global exist on args even if not defined for this subcommand
         if not hasattr(args, "include"):
