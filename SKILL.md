@@ -146,11 +146,28 @@ $SC sync all --target gemini
 | Gemini CLI | `~/.gemini/skills/` | `.gemini/skills/` |
 | Codex CLI | `~/.codex/skills/` | `agents/skills/` |
 
+## 驗證雙份漂移（check-skill-parity）
+
+同步後驗證 `~/.claude/skills` 與 `~/.agents/skills`（Copilot CLI）兩份 skill 沒有漂移。
+採 invariant-canary 策略：兩份故意不同 wording（工具名、路徑），故不做 byte 比對，只驗
+load-bearing invariant —— 雙邊都存在、frontmatter `name` 一致、description 觸發語沒退化成
+placeholder（退化會讓該 skill 在對側 CLI 無法 auto-trigger）。
+
+```bash
+~/.local/bin/python3 ~/.claude/skills/sync-config/scripts/check-skill-parity.py
+```
+
+exit 0 = 無漂移；exit 1 = 列出退化的 skill。唯讀，不改任何檔。建議 `$SC sync skills` 後跑一次。
+
 ## Additional Resources
 
 ### Reference Files
 
 - **`references/format-mapping.md`** — 完整的設定格式對照與轉換規則
+
+### Scripts
+
+- **`scripts/check-skill-parity.py`** — dual-copy drift canary（見上「驗證雙份漂移」）
 
 ### Example Files
 
